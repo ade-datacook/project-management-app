@@ -1,0 +1,18 @@
+{
+  "query": "SELECT resourceId, SUM(workload) as totalWorkload FROM tasks WHERE weekNumber = 49 AND year = 2025 GROUP BY resourceId;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3TLQeP69uDQQ4To.root --database T3AW4Lh7DepqFrFzoVBwcp --execute SELECT resourceId, SUM(workload) as totalWorkload FROM tasks WHERE weekNumber = 49 AND year = 2025 GROUP BY resourceId;",
+  "rows": [
+    {
+      "resourceId": "1",
+      "totalWorkload": "4"
+    },
+    {
+      "resourceId": "2",
+      "totalWorkload": "3"
+    }
+  ],
+  "messages": [],
+  "stdout": "resourceId\ttotalWorkload\n1\t4\n2\t3\n",
+  "stderr": "",
+  "execution_time_ms": 1027
+}

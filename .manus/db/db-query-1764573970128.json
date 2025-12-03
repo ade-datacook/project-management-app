@@ -1,0 +1,24 @@
+{
+  "query": "SELECT id, name, weekNumber, year, workload FROM tasks WHERE weekNumber = 49 ORDER BY year DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3TLQeP69uDQQ4To.root --database T3AW4Lh7DepqFrFzoVBwcp --execute SELECT id, name, weekNumber, year, workload FROM tasks WHERE weekNumber = 49 ORDER BY year DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "270002",
+      "name": "hein ?",
+      "weekNumber": "49",
+      "year": "2025",
+      "workload": "4"
+    },
+    {
+      "id": "270001",
+      "name": "test",
+      "weekNumber": "49",
+      "year": "2025",
+      "workload": "3"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tweekNumber\tyear\tworkload\n270002\thein ?\t49\t2025\t4\n270001\ttest\t49\t2025\t3\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

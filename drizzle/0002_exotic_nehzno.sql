@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD `color` varchar(7) DEFAULT '#808080' NOT NULL;

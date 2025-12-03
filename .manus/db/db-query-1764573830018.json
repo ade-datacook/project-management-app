@@ -1,0 +1,26 @@
+{
+  "query": "SELECT id, name, resourceId, workload, weekNumber, year FROM tasks WHERE weekNumber = 49 AND year = 2025 LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3TLQeP69uDQQ4To.root --database T3AW4Lh7DepqFrFzoVBwcp --execute SELECT id, name, resourceId, workload, weekNumber, year FROM tasks WHERE weekNumber = 49 AND year = 2025 LIMIT 10;",
+  "rows": [
+    {
+      "id": "270001",
+      "name": "test",
+      "resourceId": "2",
+      "workload": "3",
+      "weekNumber": "49",
+      "year": "2025"
+    },
+    {
+      "id": "270002",
+      "name": "hein ?",
+      "resourceId": "1",
+      "workload": "4",
+      "weekNumber": "49",
+      "year": "2025"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tresourceId\tworkload\tweekNumber\tyear\n270001\ttest\t2\t3\t49\t2025\n270002\thein ?\t1\t4\t49\t2025\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}

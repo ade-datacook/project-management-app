@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `isArchived` boolean DEFAULT false NOT NULL;
