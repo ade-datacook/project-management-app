@@ -27,9 +27,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
-async function startServer() {
+export function createApp() {
   const app = express();
-  const server = createServer(app);
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -43,11 +43,21 @@ async function startServer() {
       createContext,
     })
   );
+
+  // In standalone production, serve built static assets
+  if (process.env.NODE_ENV === "production" && !process.env.PASSENGER_APP_ENV) {
+    serveStatic(app);
+  }
+
+  return app;
+}
+
+export async function startServer(app: express.Express) {
+  const server = createServer(app);
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
-  } else {
-    serveStatic(app);
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
@@ -61,5 +71,3 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
   });
 }
-
-startServer().catch(console.error);
