@@ -4,10 +4,16 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+<<<<<<< HEAD
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:passenger": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=public_html/app/dist && cp -r dist/public/* public_html/app/dist/public/ 2>/dev/null || true",
     "start": "NODE_ENV=production node dist/index.js",
+=======
+    "dev": "NODE_ENV=development tsx watch server/app.ts",
+    "build": "vite build && esbuild server/app.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/app.js",
+    "start": "NODE_ENV=production node dist/app.js",
+>>>>>>> bb81ea2 (Move Passenger htaccess to public_html)
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
