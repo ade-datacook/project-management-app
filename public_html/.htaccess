@@ -1,0 +1,5 @@
+PassengerAppRoot /home/planning/public_html/app
+PassengerAppType node
+PassengerStartupFile dist/app.js
+PassengerEnvVar NODE_ENV production
+PassengerFriendlyErrorPages on

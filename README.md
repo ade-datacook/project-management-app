@@ -102,3 +102,20 @@ pnpm dev
 ```
 
 L'application sera accessible sur http://localhost:3000
+
+## Déploiement EX2 / Passenger
+
+Sur l'hébergement mutualisé EX2, il ne faut **pas** utiliser le module "Node.js App" de cPanel (il attend une appli qui ouvre un port). L'exécution se fait via Passenger qui charge le bundle Node publié dans `public_html/app/dist/app.js`.
+
+Déploiement recommandé :
+
+```bash
+pnpm install
+pnpm run build:passenger   # build + copie vers public_html/app/dist
+git add public_html/app/dist
+git commit -m "Build Passenger"
+git push
+# puis, dans cPanel : Git™ Version Control → Pull
+```
+
+Passenger lira automatiquement `public_html/.htaccess`, dont la racine est déjà configurée sur `/home/planning/public_html/app`.

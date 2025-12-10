@@ -4,9 +4,10 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
+    "dev": "NODE_ENV=development tsx watch server/app.ts",
+    "build": "vite build && esbuild server/app.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/app.js",
+    "build:passenger": "pnpm run build && mkdir -p public_html/app/dist && cp -a dist/. public_html/app/dist/",
+    "start": "NODE_ENV=production node dist/app.js",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
