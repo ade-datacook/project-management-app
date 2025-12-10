@@ -7,6 +7,10 @@ dist/
 build/
 *.dist
 
+# Passenger deployment bundle under public_html/app
+!public_html/app/dist/
+!public_html/app/dist/**
+
 # Environment variables
 .env
 .env.local
