@@ -1,4 +1,4 @@
-PassengerAppRoot /home/planning/repositories/project-management-app/server
+PassengerAppRoot /home/planning/public_html/app
 PassengerAppType node
 PassengerStartupFile dist/app.js
 PassengerEnvVar NODE_ENV production
