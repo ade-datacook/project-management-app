@@ -1,0 +1,22 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # =========================
+  # 1. Ne pas toucher à l'API NodeJS
+  # =========================
+  RewriteCond %{REQUEST_URI} ^/api(/|$)
+  RewriteRule ^ - [L]
+
+  # =========================
+  # 2. Servir les fichiers existants normalement
+  # =========================
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # =========================
+  # 3. Fallback SPA → index.html
+  # =========================
+  RewriteRule ^ /index.html [L]
+</IfModule>

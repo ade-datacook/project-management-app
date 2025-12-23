@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { getClients, toggleClientActive } from "./db";
@@ -24,7 +24,7 @@ export const appRouter = router({
     list: publicProcedure.query(async () => {
       return await db.getAllResources();
     }),
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         name: z.string(),
         photoUrl: z.string().optional(),
@@ -49,7 +49,7 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.updateClientColor(input.id, input.color);
       }),
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         name: z.string(),
         color: z.string().default("#808080"),
@@ -69,7 +69,7 @@ export const appRouter = router({
         return await db.getTasksByWeek(input.weekNumber, input.year);
       }),
     
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         name: z.string(),
         notes: z.string().optional(),
@@ -86,7 +86,7 @@ export const appRouter = router({
         return await db.createTask(input);
       }),
     
-    update: protectedProcedure
+    update: publicProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -103,7 +103,7 @@ export const appRouter = router({
         return await db.updateTask(id, updates);
       }),
     
-    delete: protectedProcedure
+    delete: publicProcedure
       .input(z.object({
         id: z.number(),
       }))
@@ -145,7 +145,7 @@ export const appRouter = router({
         return await db.getAnnualDataByResource(input.year);
       }),
     
-    resetWeek: protectedProcedure
+    resetWeek: publicProcedure
       .input(z.object({
         fromWeek: z.number(),
         fromYear: z.number(),
