@@ -6,13 +6,8 @@
   "scripts": {
     "dev": "tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-<<<<<<< Updated upstream
     "build:passenger": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=public_html/app/dist && cp -r dist/public/* public_html/app/dist/public/ 2>/dev/null || true",
-    "start": "NODE_ENV=production node dist/index.js",
-=======
-    "build:passenger": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=./public_html/app/dist && cp -r dist/public/* ./public_html/app/dist/public/ 2>/dev/null || true",
     "start": "node dist/index.js",
->>>>>>> Stashed changes
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",

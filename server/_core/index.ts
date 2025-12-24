@@ -1,3 +1,23 @@
+process.on('SIGTERM', () => {
+  console.log('[process] SIGTERM received');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('[process] SIGINT received');
+  process.exit(0);
+});
+
+process.on('uncaughtException', err => {
+  console.error('[process] uncaughtException', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', err => {
+  console.error('[process] unhandledRejection', err);
+  process.exit(1);
+});
+
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
