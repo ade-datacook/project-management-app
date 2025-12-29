@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
 import { getClients, toggleClientActive } from "./db";
@@ -21,10 +21,10 @@ export const appRouter = router({
   }),
 
   resources: router({
-    list: publicProcedure.query(async () => {
+    list: protectedProcedure.query(async () => {
       return await db.getAllResources();
     }),
-    create: publicProcedure
+    create: protectedProcedure
       .input(z.object({
         name: z.string(),
         photoUrl: z.string().optional(),
@@ -36,20 +36,20 @@ export const appRouter = router({
   }),
 
   clients: router({
-    list: publicProcedure.query(async () => {
+    list: protectedProcedure.query(async () => {
       return await getClients();
     }),
-    toggleActive: publicProcedure
+    toggleActive: protectedProcedure
       .input(z.object({ id: z.number(), isActive: z.boolean() }))
       .mutation(async ({ input }) => {
         return await toggleClientActive(input.id, input.isActive);
       }),
-    updateColor: publicProcedure
+    updateColor: protectedProcedure
       .input(z.object({ id: z.number(), color: z.string() }))
       .mutation(async ({ input }) => {
         return await db.updateClientColor(input.id, input.color);
       }),
-    create: publicProcedure
+    create: protectedProcedure
       .input(z.object({
         name: z.string(),
         color: z.string().default("#808080"),
@@ -60,7 +60,7 @@ export const appRouter = router({
   }),
 
   tasks: router({
-    listByWeek: publicProcedure
+    listByWeek: protectedProcedure
       .input(z.object({
         weekNumber: z.number(),
         year: z.number(),
@@ -68,8 +68,8 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getTasksByWeek(input.weekNumber, input.year);
       }),
-    
-    create: publicProcedure
+
+    create: protectedProcedure
       .input(z.object({
         name: z.string(),
         notes: z.string().optional(),
@@ -85,8 +85,8 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         return await db.createTask(input);
       }),
-    
-    update: publicProcedure
+
+    update: protectedProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().optional(),
@@ -102,16 +102,16 @@ export const appRouter = router({
         const { id, ...updates } = input;
         return await db.updateTask(id, updates);
       }),
-    
-    delete: publicProcedure
+
+    delete: protectedProcedure
       .input(z.object({
         id: z.number(),
       }))
       .mutation(async ({ input }) => {
         return await db.deleteTask(input.id);
       }),
-    
-    weeklyTotals: publicProcedure
+
+    weeklyTotals: protectedProcedure
       .input(z.object({
         weekNumber: z.number(),
         year: z.number(),
@@ -119,8 +119,8 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getWeeklyTotals(input.weekNumber, input.year);
       }),
-    
-    weeklyKPIs: publicProcedure
+
+    weeklyKPIs: protectedProcedure
       .input(z.object({
         weekNumber: z.number(),
         year: z.number(),
@@ -128,24 +128,24 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await db.getWeeklyKPIs(input.weekNumber, input.year);
       }),
-    
-    annualData: publicProcedure
+
+    annualData: protectedProcedure
       .input(z.object({
         year: z.number(),
       }))
       .query(async ({ input }) => {
         return await db.getAnnualDataByClient(input.year);
       }),
-    
-    annualDataByResource: publicProcedure
+
+    annualDataByResource: protectedProcedure
       .input(z.object({
         year: z.number(),
       }))
       .query(async ({ input }) => {
         return await db.getAnnualDataByResource(input.year);
       }),
-    
-    resetWeek: publicProcedure
+
+    resetWeek: protectedProcedure
       .input(z.object({
         fromWeek: z.number(),
         fromYear: z.number(),

@@ -7,13 +7,28 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import ClientsManagement from "./pages/ClientsManagement";
 
+import Login from "./pages/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
+
 function Router() {
-  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/clients"} component={ClientsManagement} />
-      <Route path={"/404"} component={NotFound} />
+      <Route path="/login" component={Login} />
+
+      {/* Protected Routes */}
+      <Route path="/">
+        <ProtectedRoute>
+          <Home />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/clients">
+        <ProtectedRoute>
+          <ClientsManagement />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/404" component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>

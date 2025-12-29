@@ -29,11 +29,12 @@ function isSecureRequest(req) {
   return protoList.some((proto) => proto.trim().toLowerCase() === "https");
 }
 function getSessionCookieOptions(req) {
+  const secure = isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req)
+    sameSite: secure ? "none" : "lax",
+    secure
   };
 }
 var init_cookies = __esm({
@@ -49,13 +50,16 @@ var init_env = __esm({
     "use strict";
     ENV = {
       appId: process.env.VITE_APP_ID ?? "",
-      cookieSecret: process.env.JWT_SECRET ?? "",
+      cookieSecret: process.env.JWT_SECRET ?? "default_secret_shhh",
+      // Use JWT_SECRET for signing
       databaseUrl: process.env.DATABASE_URL ?? "",
       oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
       ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
       isProduction: process.env.NODE_ENV === "production",
-      forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-      forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? ""
+      googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      allowedEmails: (process.env.ALLOWED_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+      allowedDomains: (process.env.ALLOWED_DOMAINS ?? "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean)
     };
   }
 });
@@ -561,10 +565,10 @@ var init_routers = __esm({
         })
       }),
       resources: router({
-        list: publicProcedure.query(async () => {
+        list: protectedProcedure.query(async () => {
           return await getAllResources();
         }),
-        create: publicProcedure.input(z2.object({
+        create: protectedProcedure.input(z2.object({
           name: z2.string(),
           photoUrl: z2.string().optional(),
           color: z2.string()
@@ -573,16 +577,16 @@ var init_routers = __esm({
         })
       }),
       clients: router({
-        list: publicProcedure.query(async () => {
+        list: protectedProcedure.query(async () => {
           return await getClients();
         }),
-        toggleActive: publicProcedure.input(z2.object({ id: z2.number(), isActive: z2.boolean() })).mutation(async ({ input }) => {
+        toggleActive: protectedProcedure.input(z2.object({ id: z2.number(), isActive: z2.boolean() })).mutation(async ({ input }) => {
           return await toggleClientActive(input.id, input.isActive);
         }),
-        updateColor: publicProcedure.input(z2.object({ id: z2.number(), color: z2.string() })).mutation(async ({ input }) => {
+        updateColor: protectedProcedure.input(z2.object({ id: z2.number(), color: z2.string() })).mutation(async ({ input }) => {
           return await updateClientColor(input.id, input.color);
         }),
-        create: publicProcedure.input(z2.object({
+        create: protectedProcedure.input(z2.object({
           name: z2.string(),
           color: z2.string().default("#808080")
         })).mutation(async ({ input }) => {
@@ -590,13 +594,13 @@ var init_routers = __esm({
         })
       }),
       tasks: router({
-        listByWeek: publicProcedure.input(z2.object({
+        listByWeek: protectedProcedure.input(z2.object({
           weekNumber: z2.number(),
           year: z2.number()
         })).query(async ({ input }) => {
           return await getTasksByWeek(input.weekNumber, input.year);
         }),
-        create: publicProcedure.input(z2.object({
+        create: protectedProcedure.input(z2.object({
           name: z2.string(),
           notes: z2.string().optional(),
           resourceId: z2.number(),
@@ -610,7 +614,7 @@ var init_routers = __esm({
         })).mutation(async ({ input }) => {
           return await createTask(input);
         }),
-        update: publicProcedure.input(z2.object({
+        update: protectedProcedure.input(z2.object({
           id: z2.number(),
           name: z2.string().optional(),
           notes: z2.string().optional(),
@@ -624,34 +628,34 @@ var init_routers = __esm({
           const { id, ...updates } = input;
           return await updateTask(id, updates);
         }),
-        delete: publicProcedure.input(z2.object({
+        delete: protectedProcedure.input(z2.object({
           id: z2.number()
         })).mutation(async ({ input }) => {
           return await deleteTask(input.id);
         }),
-        weeklyTotals: publicProcedure.input(z2.object({
+        weeklyTotals: protectedProcedure.input(z2.object({
           weekNumber: z2.number(),
           year: z2.number()
         })).query(async ({ input }) => {
           return await getWeeklyTotals(input.weekNumber, input.year);
         }),
-        weeklyKPIs: publicProcedure.input(z2.object({
+        weeklyKPIs: protectedProcedure.input(z2.object({
           weekNumber: z2.number(),
           year: z2.number()
         })).query(async ({ input }) => {
           return await getWeeklyKPIs(input.weekNumber, input.year);
         }),
-        annualData: publicProcedure.input(z2.object({
+        annualData: protectedProcedure.input(z2.object({
           year: z2.number()
         })).query(async ({ input }) => {
           return await getAnnualDataByClient(input.year);
         }),
-        annualDataByResource: publicProcedure.input(z2.object({
+        annualDataByResource: protectedProcedure.input(z2.object({
           year: z2.number()
         })).query(async ({ input }) => {
           return await getAnnualDataByResource(input.year);
         }),
-        resetWeek: publicProcedure.input(z2.object({
+        resetWeek: protectedProcedure.input(z2.object({
           fromWeek: z2.number(),
           fromYear: z2.number(),
           toWeek: z2.number(),
@@ -675,17 +679,39 @@ var context_exports = {};
 __export(context_exports, {
   createContext: () => createContext
 });
+import { jwtVerify } from "jose";
+import { parse as parseCookie } from "cookie";
 async function createContext(opts) {
+  const { req, res } = opts;
+  const cookieHeader = req.headers.cookie || "";
+  const cookies = parseCookie(cookieHeader);
+  const sessionToken = cookies[COOKIE_NAME];
+  let user = null;
+  if (sessionToken) {
+    try {
+      const secretKey = new TextEncoder().encode(ENV.cookieSecret);
+      const { payload } = await jwtVerify(sessionToken, secretKey, {
+        algorithms: ["HS256"]
+      });
+      if (payload && typeof payload.openId === "string") {
+        const dbUser = await getUserByOpenId(payload.openId);
+        user = dbUser || null;
+      }
+    } catch (err) {
+    }
+  }
   return {
-    req: opts.req,
-    res: opts.res,
-    user: null
-    // On renvoie toujours null, c'est public
+    req,
+    res,
+    user
   };
 }
 var init_context = __esm({
   "server/_core/context.ts"() {
     "use strict";
+    init_const();
+    init_env();
+    init_db();
   }
 });
 
@@ -762,6 +788,134 @@ var init_vite = __esm({
   }
 });
 
+// server/_core/googleAuth.ts
+var googleAuth_exports = {};
+__export(googleAuth_exports, {
+  getGoogleAuthUrl: () => getGoogleAuthUrl,
+  handleGoogleCallback: () => handleGoogleCallback
+});
+import axios from "axios";
+import { SignJWT } from "jose";
+import { webcrypto } from "node:crypto";
+function getRootUrl(req) {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const proto = protocol.includes(",") ? protocol.split(",")[0].trim() : protocol;
+  return `${proto}://${req.get("host")}`;
+}
+function getGoogleAuthUrl(req) {
+  const rootUrl = getRootUrl(req);
+  const redirectUri = `${rootUrl}/api/auth/google/callback`;
+  const options = {
+    redirect_uri: redirectUri,
+    client_id: ENV.googleClientId,
+    access_type: "offline",
+    response_type: "code",
+    prompt: "select_account",
+    scope: [
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ].join(" ")
+  };
+  const qs = new URLSearchParams(options);
+  return `${GOOGLE_AUTH_URL}?${qs.toString()}`;
+}
+async function getGoogleTokens(code, redirectUri) {
+  const values = {
+    code,
+    client_id: ENV.googleClientId,
+    client_secret: ENV.googleClientSecret,
+    redirect_uri: redirectUri,
+    grant_type: "authorization_code"
+  };
+  const { data } = await axios.post(GOOGLE_TOKEN_URL, new URLSearchParams(values), {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+  return data;
+}
+async function getGoogleUser(accessToken) {
+  const { data } = await axios.get(GOOGLE_USERINFO_URL, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  return data;
+}
+async function handleGoogleCallback(req, res) {
+  const code = req.query.code;
+  const rootUrl = getRootUrl(req);
+  const redirectUri = `${rootUrl}/api/auth/google/callback`;
+  try {
+    const { access_token } = await getGoogleTokens(code, redirectUri);
+    const googleUser = await getGoogleUser(access_token);
+    const isVerified = googleUser.email_verified === true || googleUser.verified_email === true;
+    if (!isVerified) {
+      logStartup(`[Auth] Email not verified for ${googleUser.email}. Payload: ${JSON.stringify(googleUser)}`);
+      return res.status(403).send("Email not verified by Google");
+    }
+    const email = googleUser.email.toLowerCase();
+    const domain = (googleUser.hd || email.split("@")[1] || "").toLowerCase();
+    const isEmailAllowed = ENV.allowedEmails.length === 0 || ENV.allowedEmails.includes(email);
+    const isDomainAllowed = ENV.allowedDomains.length === 0 || ENV.allowedDomains.includes(domain);
+    let isAuthorized = false;
+    if (ENV.allowedDomains.length > 0 && ENV.allowedEmails.length > 0) {
+      isAuthorized = isEmailAllowed || isDomainAllowed;
+    } else if (ENV.allowedDomains.length > 0) {
+      isAuthorized = isDomainAllowed;
+    } else if (ENV.allowedEmails.length > 0) {
+      isAuthorized = isEmailAllowed;
+    } else {
+      isAuthorized = true;
+    }
+    if (!isAuthorized) {
+      logStartup(`[Auth] Rejected unauthorized user: ${email} (domain: ${domain})`);
+      return res.status(403).send("Acc\xE8s restreint : votre compte ou domaine n'est pas autoris\xE9.");
+    }
+    await upsertUser({
+      openId: `google_${googleUser.sub}`,
+      name: googleUser.name,
+      email,
+      loginMethod: "google",
+      lastSignedIn: /* @__PURE__ */ new Date()
+    });
+    const secretKey = new TextEncoder().encode(ENV.cookieSecret);
+    const sessionToken = await new SignJWT({
+      openId: `google_${googleUser.sub}`,
+      appId: "google-auth",
+      name: googleUser.name
+    }).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setExpirationTime("365d").sign(secretKey);
+    const cookieOptions = getSessionCookieOptions(req);
+    res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+    res.redirect("/");
+  } catch (err) {
+    let errorMessage = err.message;
+    if (err.response?.data) {
+      errorMessage += ` - Details: ${JSON.stringify(err.response.data)}`;
+    }
+    logStartup(`[Auth] Google Callback Error: ${errorMessage}
+${err.stack}`);
+    const host = req.get("host") || "";
+    if (host.includes("localhost") || host.includes("127.0.0.1") || process.env.NODE_ENV === "development") {
+      return res.status(500).send(`Authentication failed: ${errorMessage}`);
+    }
+    res.status(500).send("Authentication failed");
+  }
+}
+var GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL;
+var init_googleAuth = __esm({
+  "server/_core/googleAuth.ts"() {
+    "use strict";
+    init_env();
+    init_const();
+    init_db();
+    init_cookies();
+    init_index();
+    if (!globalThis.crypto) {
+      globalThis.crypto = webcrypto;
+    }
+    GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+    GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+    GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
+  }
+});
+
 // server/_core/index.ts
 import dotenv from "dotenv";
 import express2 from "express";
@@ -808,6 +962,14 @@ async function startServer() {
   const server = createServer(app);
   app.use(express2.json({ limit: "50mb" }));
   app.use(express2.urlencoded({ limit: "50mb", extended: true }));
+  app.get("/api/auth/google", async (req, res) => {
+    const { getGoogleAuthUrl: getGoogleAuthUrl2 } = await Promise.resolve().then(() => (init_googleAuth(), googleAuth_exports));
+    res.redirect(getGoogleAuthUrl2(req));
+  });
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const { handleGoogleCallback: handleGoogleCallback2 } = await Promise.resolve().then(() => (init_googleAuth(), googleAuth_exports));
+    await handleGoogleCallback2(req, res);
+  });
   app.get("/api/health", async (_req, res) => {
     try {
       const { db: db2 } = await Promise.resolve().then(() => (init_db(), db_exports));

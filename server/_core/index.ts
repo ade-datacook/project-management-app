@@ -102,6 +102,17 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+  // Google Auth routes
+  app.get("/api/auth/google", async (req, res) => {
+    const { getGoogleAuthUrl } = await import("./googleAuth");
+    res.redirect(getGoogleAuthUrl(req));
+  });
+
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const { handleGoogleCallback } = await import("./googleAuth");
+    await handleGoogleCallback(req, res);
+  });
+
   // Health check route
   app.get("/api/health", async (_req, res) => {
     try {
