@@ -25,16 +25,20 @@ function Router() {
 //   to keep consistent foreground/background color across components
 // - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
 
+import { UndoRedoProvider } from "./contexts/UndoRedoContext";
+
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider
         defaultTheme="light"
-        // switchable
+      // switchable
       >
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <UndoRedoProvider>
+            <Toaster />
+            <Router />
+          </UndoRedoProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

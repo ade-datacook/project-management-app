@@ -3,11 +3,11 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import { fileURLToPath } from "url"; // <--- Import ajouté
-import { createServer as createViteServer } from "vite";
-import viteConfig from "../../vite.config";
+import { fileURLToPath } from "url";
+import { logStartup } from "./index";
+// Vite is only used in development, we'll import it dynamically in setupVite
+// to avoid production errors when devDependencies are missing.
 
-// <--- Définition manuelle de __dirname pour éviter l'erreur "undefined"
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -16,11 +16,14 @@ export async function setupVite(app: Express, server: Server) {
     middlewareMode: true,
     hmr: { server },
     allowedHosts: true as const,
+    fs: { strict: false }, // Relaxed for debugging
   };
 
+  const { createServer: createViteServer } = await import("vite");
+
   const vite = await createViteServer({
-    ...viteConfig,
-    configFile: false,
+    configFile: path.resolve(process.cwd(), "vite.config.ts"),
+    root: path.resolve(process.cwd(), "client"),
     server: serverOptions,
     appType: "custom",
   });
@@ -31,8 +34,7 @@ export async function setupVite(app: Express, server: Server) {
 
     try {
       const clientTemplate = path.resolve(
-        __dirname, // <--- Remplacé (était import.meta.dirname)
-        "../..",
+        process.cwd(),
         "client",
         "index.html"
       );
@@ -55,18 +57,24 @@ export async function setupVite(app: Express, server: Server) {
 export function serveStatic(app: Express) {
   const distPath =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../..", "dist", "public") // <--- Remplacé
-      : path.resolve(__dirname, "public"); // <--- Remplacé
+      ? path.resolve(__dirname, "../..", "dist", "public")
+      : path.resolve(__dirname, "public");
+
+  // Log the path being used for static files
+  logStartup(`[static] Checking assets in: ${distPath}`);
+
   if (!fs.existsSync(distPath)) {
-    console.error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
-    );
+    logStartup(`[static] ERROR: Could not find the build directory: ${distPath}`);
+  } else {
+    const files = fs.readdirSync(distPath);
+    logStartup(`[static] Directory found. Files/Folders: ${files.join(", ")}`);
   }
 
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.use("*", (req, res) => {
+    logStartup(`[static] Fallback triggered for: ${req.originalUrl}`);
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

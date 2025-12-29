@@ -1,20 +1,16 @@
 import { eq, and, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import { InsertUser, users, resources, clients, tasks, InsertResource, InsertClient, InsertTask } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+const poolConnection = mysql.createPool(process.env.DATABASE_URL!);
+export const db = drizzle(poolConnection);
 
+// Helper to keep existing code working with minor changes, 
+// though we can export db directly.
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
+  return db;
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
@@ -138,7 +134,7 @@ export async function createTask(task: InsertTask) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const result = await db.insert(tasks).values(task);
-  return result;
+  return { id: result[0].insertId };
 }
 
 export async function updateTask(id: number, updates: Partial<InsertTask>) {
@@ -158,41 +154,41 @@ export async function deleteTask(id: number) {
 export async function getWeeklyTotals(weekNumber: number, year: number) {
   const db = await getDb();
   if (!db) return [];
-  
+
   const result = await db
     .select({
       resourceId: tasks.resourceId,
-      totalWorkload: sql<number>`CAST(COALESCE(SUM(${tasks.workload}), 0) AS DECIMAL(10,2))`,
+      totalWorkload: sql<number>`COALESCE(SUM(${tasks.workload}), 0)`,
     })
     .from(tasks)
     .where(and(eq(tasks.weekNumber, weekNumber), eq(tasks.year, year)))
     .groupBy(tasks.resourceId);
-  
+
   // Convert string to number (MySQL returns DECIMAL as string)
   const converted = result.map(r => ({
     resourceId: r.resourceId,
     totalWorkload: typeof r.totalWorkload === 'string' ? parseFloat(r.totalWorkload) : r.totalWorkload,
   }));
-  
+
   return converted;
 }
 
 export async function getAnnualDataByClient(year: number) {
   const db = await getDb();
   if (!db) return [];
-  
+
   // Group by client and month directly from week number
   // Month = CEIL(weekNumber / 4.33) gives approximate month
   const result = await db
     .select({
       clientId: tasks.clientId,
-      month: sql<number>`CEIL(${tasks.weekNumber} / 4.33) as month`,
+      month: sql<number>`CAST((${tasks.weekNumber} / 4.33) + 0.9999 as INTEGER) as month`,
       totalWorkload: sql<number>`COALESCE(SUM(${tasks.workload}), 0) as totalWorkload`,
     })
     .from(tasks)
     .where(eq(tasks.year, year))
     .groupBy(tasks.clientId, sql`month`);
-  
+
   // Convert string to number (MySQL returns DECIMAL as string)
   return result.map(r => ({
     clientId: r.clientId,
@@ -211,7 +207,7 @@ export async function updateClientColor(clientId: number, color: string) {
 export async function getWeeklyKPIs(weekNumber: number, year: number) {
   const db = await getDb();
   if (!db) return { totalEstimated: 0, totalActual: 0, variance: 0 };
-  
+
   const result = await db
     .select({
       totalEstimated: sql<number>`COALESCE(SUM(${tasks.estimatedDays}), 0)`,
@@ -219,15 +215,15 @@ export async function getWeeklyKPIs(weekNumber: number, year: number) {
     })
     .from(tasks)
     .where(and(eq(tasks.weekNumber, weekNumber), eq(tasks.year, year)));
-  
+
   if (result.length === 0) {
     return { totalEstimated: 0, totalActual: 0, variance: 0 };
   }
-  
+
   const estimated = Number(result[0].totalEstimated) || 0;
   const actual = (Number(result[0].totalActual) || 0) / 2; // Convert half-days to days
   const variance = actual - estimated;
-  
+
   return {
     totalEstimated: estimated,
     totalActual: actual,
@@ -238,19 +234,19 @@ export async function getWeeklyKPIs(weekNumber: number, year: number) {
 export async function getAnnualDataByResource(year: number) {
   const db = await getDb();
   if (!db) return [];
-  
+
   // Group by resource and month
   const result = await db
     .select({
       resourceId: tasks.resourceId,
-      month: sql<number>`CEIL(${tasks.weekNumber} / 4.33) as month`,
+      month: sql<number>`CAST((${tasks.weekNumber} / 4.33) + 0.9999 as INTEGER) as month`,
       totalWorkload: sql<number>`COALESCE(SUM(${tasks.workload}), 0) as totalWorkload`,
       totalEstimated: sql<number>`COALESCE(SUM(${tasks.estimatedDays}), 0) as totalEstimated`,
     })
     .from(tasks)
     .where(eq(tasks.year, year))
     .groupBy(tasks.resourceId, sql`month`);
-  
+
   // Convert string to number (MySQL returns DECIMAL as string)
   return result.map(r => ({
     resourceId: r.resourceId,

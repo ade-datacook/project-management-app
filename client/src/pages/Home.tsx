@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react"; // Ajout de useRef
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,7 +15,6 @@ import { fr } from "date-fns/locale";
 import AnnualView from "./AnnualView";
 import { useUndoRedo } from "@/contexts/UndoRedoContext";
 
-// Simple week number calculation
 function getWeekNumber(date: Date): number {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -38,6 +37,10 @@ export default function Home() {
   const [estimatedDays, setEstimatedDays] = useState<number>(0);
   const [selectedClient, setSelectedClient] = useState<number | null>(null);
 
+  // Ce ref permet de savoir si nous sommes en train d'exécuter un Undo/Redo
+  // pour NE PAS enregistrer cette action dans l'historique
+  const isRestoring = useRef(false);
+
   const utils = trpc.useUtils();
   const { canUndo, canRedo, undo, redo, recordAction } = useUndoRedo();
 
@@ -53,17 +56,11 @@ export default function Home() {
     year: currentWeek.year,
   });
 
-
-
-  // Filter active clients only
   const clients = allClients.filter((c: any) => c.isActive !== false);
-
-  // Filter to show only Baptiste, Lucas, Victor
   const displayedResources = resources.filter(r => 
     ["Baptiste", "Lucas", "Victor"].includes(r.name)
   );
 
-  // Transform totals array to object indexed by resourceId
   const totalsByResource = (totalsArray as Array<{ resourceId: number; totalWorkload: number }>).reduce(
     (acc, item) => {
       acc[item.resourceId] = item.totalWorkload;
@@ -72,24 +69,20 @@ export default function Home() {
     {} as Record<number, number>
   );
 
+  // --- MUTATIONS ---
+
   const createTask = trpc.tasks.create.useMutation({
     onSuccess: async (result, variables) => {
-      // Wait for invalidation to complete
+      // Invalidation immédiate pour mise à jour UI
       await utils.tasks.listByWeek.invalidate();
       await utils.tasks.weeklyTotals.invalidate();
       
-      // Get the newly created task to record its ID
-      const updatedTasks = await utils.tasks.listByWeek.fetch(currentWeek);
-      const newTask = updatedTasks.find(t => 
-        t.name === variables.name && 
-        t.clientId === variables.clientId &&
-        t.resourceId === variables.resourceId
-      );
-      
-      if (newTask) {
+      // IMPORTANT: On n'enregistre l'action que si ce n'est PAS un undo/redo
+      // On utilise 'result' directement (l'objet créé par le serveur), plus fiable que de refetcher
+      if (!isRestoring.current && result) {
         recordAction({
           type: 'create',
-          taskId: newTask.id,
+          taskId: result.id, // ID renvoyé par le back
           newState: variables,
           timestamp: Date.now(),
         });
@@ -99,7 +92,9 @@ export default function Home() {
 
   const updateTask = trpc.tasks.update.useMutation({
     onMutate: async (variables) => {
-      // Save previous state before update
+      // On n'enregistre pas l'historique si on est en train de restaurer
+      if (isRestoring.current) return;
+
       const task = tasks.find(t => t.id === variables.id);
       if (task) {
         recordAction({
@@ -119,7 +114,8 @@ export default function Home() {
 
   const deleteTask = trpc.tasks.delete.useMutation({
     onMutate: async (variables) => {
-      // Save task before deletion
+      if (isRestoring.current) return;
+
       const task = tasks.find(t => t.id === variables.id);
       if (task) {
         recordAction({
@@ -135,6 +131,73 @@ export default function Home() {
       utils.tasks.weeklyTotals.invalidate();
     },
   });
+
+  // --- UNDO / REDO LISTENERS ---
+
+  useEffect(() => {
+    const handleUndoEvent = (e: any) => {
+      if (!e.detail) return;
+      
+      const action = e.detail;
+      console.log('[Home] Undoing:', action.type);
+      
+      // On active le drapeau pour bloquer recordAction
+      isRestoring.current = true;
+
+      const options = {
+        // Une fois la mutation terminée (succès ou erreur), on désactive le drapeau
+        onSettled: () => { isRestoring.current = false; }
+      };
+      
+      if (action.type === 'create' && action.taskId) {
+        // Annuler une création = Supprimer
+        deleteTask.mutate({ id: action.taskId }, options);
+      } else if (action.type === 'delete' && action.previousState) {
+        // Annuler une suppression = Recréer
+        // Note: L'ID changera probablement, le backend assignera un nouvel ID
+        const { id, ...taskData } = action.previousState; // On retire l'ancien ID pour laisser le back gérer
+        createTask.mutate(taskData, options);
+      } else if (action.type === 'update' && action.previousState) {
+        // Annuler une modif = Remettre l'état précédent
+        updateTask.mutate(action.previousState, options);
+      } else {
+        // Si aucune action ne matche, on reset le flag manuellement
+        isRestoring.current = false;
+      }
+    };
+
+    const handleRedoEvent = (e: any) => {
+      if (!e.detail) return;
+      
+      const action = e.detail;
+      console.log('[Home] Redoing:', action.type);
+      
+      isRestoring.current = true;
+      const options = {
+        onSettled: () => { isRestoring.current = false; }
+      };
+      
+      if (action.type === 'create' && action.newState) {
+        createTask.mutate(action.newState, options);
+      } else if (action.type === 'delete' && action.taskId) {
+        deleteTask.mutate({ id: action.taskId }, options);
+      } else if (action.type === 'update' && action.newState) {
+        updateTask.mutate(action.newState, options);
+      } else {
+        isRestoring.current = false;
+      }
+    };
+
+    window.addEventListener('undo-action', handleUndoEvent);
+    window.addEventListener('redo-action', handleRedoEvent);
+
+    return () => {
+      window.removeEventListener('undo-action', handleUndoEvent);
+      window.removeEventListener('redo-action', handleRedoEvent);
+    };
+  }, [createTask, updateTask, deleteTask]); // Dépendances stables
+
+  // --- RESTE DU CODE ---
 
   const formatWeek = (weekNumber: number) => `S${weekNumber}`;
 
@@ -161,77 +224,6 @@ export default function Home() {
     },
   });
 
-  const handleAddTask = () => {
-    if (resources.length === 0 || clients.length === 0 || !selectedClient) return;
-    createTask.mutate({
-      name: "Nouvelle tâche",
-      notes: "",
-      resourceId: resources[0].id,
-      clientId: selectedClient,
-      workload: 0,
-      taskType: "oneshot", // Default type
-      estimatedDays: estimatedDays,
-      weekNumber: currentWeek.weekNumber,
-      year: currentWeek.year,
-    });
-    setShowAddTaskDialog(false);
-    setEstimatedDays(0);
-    setSelectedClient(null);
-  };
-
-  // Listen to undo/redo events
-  useEffect(() => {
-    const handleUndoEvent = (e: any) => {
-      if (!e.detail) {
-        console.warn('[Home] Undo event without detail');
-        return;
-      }
-      
-      const action = e.detail;
-      console.log('[Home] Undo action:', action);
-      
-      if (action.type === 'create' && action.taskId) {
-        // Undo create = delete the task
-        deleteTask.mutate({ id: action.taskId });
-      } else if (action.type === 'delete' && action.previousState) {
-        // Undo delete = recreate the task
-        createTask.mutate(action.previousState);
-      } else if (action.type === 'update' && action.previousState) {
-        // Undo update = restore previous state
-        updateTask.mutate(action.previousState);
-      }
-    };
-
-    const handleRedoEvent = (e: any) => {
-      if (!e.detail) {
-        console.warn('[Home] Redo event without detail');
-        return;
-      }
-      
-      const action = e.detail;
-      console.log('[Home] Redo action:', action);
-      
-      if (action.type === 'create' && action.newState) {
-        // Redo create = recreate the task
-        createTask.mutate(action.newState);
-      } else if (action.type === 'delete' && action.taskId) {
-        // Redo delete = delete again
-        deleteTask.mutate({ id: action.taskId });
-      } else if (action.type === 'update' && action.newState) {
-        // Redo update = apply new state
-        updateTask.mutate(action.newState);
-      }
-    };
-
-    window.addEventListener('undo-action', handleUndoEvent);
-    window.addEventListener('redo-action', handleRedoEvent);
-
-    return () => {
-      window.removeEventListener('undo-action', handleUndoEvent);
-      window.removeEventListener('redo-action', handleRedoEvent);
-    };
-  }, [createTask, updateTask, deleteTask]);
-
   const handleResetWeek = () => {
     let previousWeek = currentWeek.weekNumber - 1;
     let previousYear = currentWeek.year;
@@ -249,11 +241,28 @@ export default function Home() {
     });
   };
 
+  const handleAddTask = () => {
+    if (resources.length === 0 || clients.length === 0 || !selectedClient) return;
+    createTask.mutate({
+      name: "Nouvelle tâche",
+      notes: "",
+      resourceId: resources[0].id,
+      clientId: selectedClient,
+      workload: 0,
+      taskType: "oneshot",
+      estimatedDays: estimatedDays,
+      weekNumber: currentWeek.weekNumber,
+      year: currentWeek.year,
+    });
+    setShowAddTaskDialog(false);
+    setEstimatedDays(0);
+    setSelectedClient(null);
+  };
+
   if (viewMode === "annual") {
     return <AnnualView onBackToWeekly={() => setViewMode("weekly")} />;
   }
 
-  // Group tasks by client
   const tasksByClient = tasks.reduce((acc, task) => {
     if (!acc[task.clientId]) {
       acc[task.clientId] = [];
@@ -262,13 +271,11 @@ export default function Home() {
     return acc;
   }, {} as Record<number, typeof tasks>);
 
-  // Sort clients alphabetically
   const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <>
       <div className="min-h-screen flex flex-col bg-gray-50">
-        {/* Sticky Header */}
         <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
           <div className="container py-4">
             <div className="flex items-center justify-between">
@@ -303,7 +310,7 @@ export default function Home() {
                 <Button 
                   onClick={() => {
                     if (tasks.length > 0) {
-                      if (confirm(`Cette semaine contient déjà ${tasks.length} tâche(s). Voulez-vous vraiment dupliquer la semaine précédente ? Cela ajoutera les tâches non terminées de la semaine précédente.`)) {
+                      if (confirm(`Cette semaine contient déjà ${tasks.length} tâche(s). Voulez-vous vraiment dupliquer la semaine précédente ?`)) {
                         handleResetWeek();
                       }
                     } else {
@@ -327,14 +334,12 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Main Content - List by Client */}
         <div className="flex-1 overflow-auto pb-32">
           <div className="container py-6 space-y-6">
             {sortedClients.map((client) => {
               const clientTasks = tasksByClient[client.id] || [];
               return (
                 <div key={client.id} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                  {/* Client Header */}
                   <div 
                     className="px-6 py-3 font-bold text-white text-lg"
                     style={{ 
@@ -344,8 +349,6 @@ export default function Home() {
                   >
                     {client.name}
                   </div>
-
-                  {/* Tasks Table */}
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
@@ -371,8 +374,6 @@ export default function Home() {
                       </tbody>
                     </table>
                   </div>
-
-                  {/* Add Task Button */}
                   <div className="px-6 py-3 bg-gray-50 border-t">
                     <Button 
                       onClick={() => {
@@ -393,7 +394,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Sticky Footer - Totals */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-20">
           <div className="container py-4">
             <div className="flex items-center justify-around gap-4">
@@ -418,7 +418,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Add Task Dialog */}
       <Dialog open={showAddTaskDialog} onOpenChange={setShowAddTaskDialog}>
         <DialogContent>
           <DialogHeader>
@@ -451,6 +450,7 @@ export default function Home() {
   );
 }
 
+// ... Le reste du fichier (TaskRow, interface) reste inchangé
 interface TaskRowProps {
   task: any;
   resources: any[];
@@ -463,7 +463,6 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
   const [notes, setNotes] = useState(task.notes || "");
   const [taskName, setTaskName] = useState(task.name);
 
-  // Debounce for task name
   useEffect(() => {
     const timer = setTimeout(() => {
       if (taskName !== task.name) {
@@ -473,7 +472,6 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
     return () => clearTimeout(timer);
   }, [taskName]);
 
-  // Debounce for notes
   useEffect(() => {
     const timer = setTimeout(() => {
       if (notes !== task.notes) {
@@ -498,15 +496,12 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
 
   return (
     <tr className="border-b hover:bg-gray-50/50 transition-colors">
-      {/* Done */}
       <td className="px-4 py-3">
         <Checkbox
           checked={task.isCompleted}
           onCheckedChange={(checked) => onUpdate({ isCompleted: checked })}
         />
       </td>
-
-      {/* Livrable */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           <Input
@@ -532,8 +527,6 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
           </Popover>
         </div>
       </td>
-
-      {/* Assignation */}
       <td className="px-4 py-3">
         <div 
           className="px-3 py-2 rounded-full text-sm font-medium text-center text-white"
@@ -558,8 +551,6 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
           </Select>
         </div>
       </td>
-
-      {/* Due Date */}
       <td className="px-4 py-3 text-center">
         <Popover>
           <PopoverTrigger asChild>
@@ -578,8 +569,6 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
           </PopoverContent>
         </Popover>
       </td>
-
-      {/* Temps(j) */}
       <td className="px-4 py-3">
         <div className="flex flex-col items-center gap-2">
           <div className="text-2xl font-bold">{workloadDays.toFixed(1)}</div>
@@ -609,8 +598,6 @@ function TaskRow({ task, resources, onUpdate, onDelete }: TaskRowProps) {
           </div>
         </div>
       </td>
-
-      {/* Actions */}
       <td className="px-4 py-3 text-center">
         <Button
           variant="ghost"
